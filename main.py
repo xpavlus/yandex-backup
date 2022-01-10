@@ -72,12 +72,11 @@ class YaBackup(YaFile):
         self.date = datetime.now().strftime(date_template)
         self.prefix = prefix
 
-    def full_path(self, path, suffix=""):
-        res_path = self.remote_dir
-        res_path += f"/{self.prefix}{os.path.basename(path)}"
-        res_path += f"-{self.date}"
-        res_path += suffix
-        return res_path
+    def remote_full_path(self,file, suffix=""):
+        return f"{self.remote_dir}/{file}"
+
+    def backup_path(self, path, prefix="", suffix=""):
+        return self.remote_full_path(f"{self.prefix}{prefix}{os.path.basename(path)}{suffix}")
 
     @staticmethod
     def archive(archive, path):
@@ -94,17 +93,17 @@ class YaBackup(YaFile):
         if archive:
             with tempfile.TemporaryDirectory(prefix="ya_backup-") as tmpdir:
                 arch = YaBackup.archive(os.path.join(tmpdir, os.path.basename(path)) + ".tgz", path)
-                self.upload(arch, f"{self.full_path(path)}.tgz")
+                self.upload(arch, self.backup_path(path, suffix=".tgz"))
         else:
             if os.path.isdir(path):
                 for d, _, files in os.walk(path):
-                    remote_dir_path = self.full_path(path, suffix=f"/{d.replace(path, '').strip('/')}")
+                    remote_dir_path = self.backup_path(path, suffix=f"/{d.replace(path, '').strip('/')}")
                     if not self.is_dir(remote_dir_path):
                         self.create(remote_dir_path)
                     for f in files:
                         self.upload(os.path.join(d, f), f"{remote_dir_path}/{f}", True)
             elif os.path.isfile(path):
-                self.upload(path, self.full_path(path))
+                self.upload(path, self.backup_path(path))
 
     def clear_old(self, how_many_to_store, path=None, prefix=None):
         if path is None or path == self.remote_dir:
@@ -116,7 +115,9 @@ class YaBackup(YaFile):
         else:
             if not prefix is None:
                 file_list = map(file_list, lambda x: x['name'].startswith(prefix))
-        files_to_delete = file_list[how_many_to_store:]
+        for file in file_list[how_many_to_store:]:
+
+
 
 
 if __name__ == '__main__':
