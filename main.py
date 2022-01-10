@@ -26,13 +26,13 @@ class YaFile(object):
                 req_url = f'{self.URL}?path={path}&sort={sort}'
             req = requests.get(req_url, headers=self.headers).json()
         except KeyError:
-            return ""
-        return req if 'error' not in req else ""
+            return {}
+        return {} if 'error' in req else req
 
-    def exist(self,path):
+    def exist(self, path):
         return 'path' in self.get_info(path)
 
-    def is_dir(self,path):
+    def is_dir(self, path):
         if self.exist(path):
             return 'dir' == self.get_info(path)['type']
         else:
@@ -60,7 +60,7 @@ class YaFile(object):
         res = requests.get(f'{self.URL}/upload?path={remote_path}&overwrite={replace}', headers=self.headers).json()
         with open(loadfile, 'rb') as f:
             try:
-                requests.put(res['href'], files={'file':f})
+                requests.put(res['href'], files={'file': f})
             except KeyError:
                 print(f"{res} (path: {loadfile}, remote: {remote_path})")
 
@@ -72,8 +72,15 @@ class YaBackup(YaFile):
         self.date = datetime.now().strftime(date_template)
         self.prefix = prefix
 
-    def remote_full_path(self,file, suffix=""):
-        return f"{self.remote_dir}/{file}"
+    def remote_full_path(self, file, subdir=""):
+        subdir = subdir.strip('/')
+        return '/'.join(
+            list(filter(lambda x: x, [
+                self.remote_dir,
+                subdir,
+                file
+            ]))
+        )
 
     def backup_path(self, path, prefix="", suffix=""):
         return self.remote_full_path(f"{self.prefix}{prefix}{os.path.basename(path)}{suffix}")
@@ -113,11 +120,10 @@ class YaBackup(YaFile):
         if len(file_list) == 0:
             return
         else:
-            if not prefix is None:
-                file_list = map(file_list, lambda x: x['name'].startswith(prefix))
+            if prefix:
+                file_list = list(filter(lambda x: x['name'].startswith(prefix), file_list))
         for file in file_list[how_many_to_store:]:
-
-
+            self.delete(self.remote_full_path(file['name'], subdir=path))
 
 
 if __name__ == '__main__':
