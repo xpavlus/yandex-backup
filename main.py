@@ -1,4 +1,5 @@
 import os
+import re
 import tarfile
 import tempfile
 from datetime import datetime
@@ -116,7 +117,13 @@ class YaBackup(YaFile):
                     for f in files:
                         self.upload(os.path.join(d, f), self.join(store_dir, f), True)
             elif os.path.isfile(path):
-                self.upload(path, self.join(self.get_root(), self.backup_path(path)))
+                ext = re.findall(r'\.\w+$', path)[-1]
+                if ext:
+                    path_trim = path[:path.rindex(ext)]
+                    self.upload(path, self.join(self.get_root(), self.backup_path(path_trim, suffix=ext)))
+                else:
+                    self.upload(path, self.join(self.get_root(), self.backup_path(path)))
+
 
     def clear_old(self, how_many_to_store, path="", prefix=""):
         if path or path == self.remote_dir:
