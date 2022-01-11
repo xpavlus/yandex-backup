@@ -1,0 +1,6 @@
+/home/pavel/tmp/:
+  archive: False
+  days to store: 5
+/home/pavel/Videos:
+  archive: True
+  days to store: 1

@@ -8,6 +8,7 @@ import requests
 
 class YaFile(object):
     URL = "https://cloud-api.yandex.net/v1/disk/resources"
+    DELIMITER = "/"
 
     def __init__(self, token):
         self.token = token
@@ -51,10 +52,12 @@ class YaFile(object):
             return []
 
     def create(self, path):
-        requests.put(f'{self.URL}?path={path}', headers=self.headers)
+        req = requests.put(f'{self.URL}?path={path}', headers=self.headers)
+        return req
 
     def delete(self, path):
-        requests.delete(f'{self.URL}?path={path}', headers=self.headers)
+        req = requests.delete(f'{self.URL}?path={path}', headers=self.headers)
+        return req
 
     def upload(self, loadfile, remote_path, replace=False):
         res = requests.get(f'{self.URL}/upload?path={remote_path}&overwrite={replace}', headers=self.headers).json()
@@ -68,22 +71,23 @@ class YaFile(object):
 class YaBackup(YaFile):
     def __init__(self, token, remote_dir="", date_template='%Y_%m_%d', prefix=""):
         YaFile.__init__(self, token)
-        self.remote_dir = f"/{remote_dir.strip('/')}"
+        self.remote_dir = f"/{remote_dir.strip(self.DELIMITER)}"
         self.date = datetime.now().strftime(date_template)
         self.prefix = prefix
 
-    def remote_full_path(self, file, subdir=""):
-        subdir = subdir.strip('/')
-        return '/'.join(
-            list(filter(lambda x: x, [
-                self.remote_dir,
-                subdir,
-                file
-            ]))
+    def join(self, *args):
+        paths = [s.strip(self.DELIMITER) for s in args]
+        result = self.DELIMITER.join(
+            list(filter(lambda x: x, paths))
         )
+        return self.DELIMITER + result
+
+    def get_root(self):
+        return self.remote_dir
 
     def backup_path(self, path, prefix="", suffix=""):
-        return self.remote_full_path(f"{self.prefix}{prefix}{os.path.basename(path)}{suffix}")
+        result = f"{self.prefix}{prefix}{path.rstrip(self.DELIMITER).split(self.DELIMITER)[-1]}-{self.date}{suffix}"
+        return result
 
     @staticmethod
     def archive(archive, path):
@@ -100,20 +104,22 @@ class YaBackup(YaFile):
         if archive:
             with tempfile.TemporaryDirectory(prefix="ya_backup-") as tmpdir:
                 arch = YaBackup.archive(os.path.join(tmpdir, os.path.basename(path)) + ".tgz", path)
-                self.upload(arch, self.backup_path(path, suffix=".tgz"))
+                self.upload(arch, self.join(self.get_root(), self.backup_path(path, suffix=".tgz")))
         else:
             if os.path.isdir(path):
+                backup_path = self.join(self.get_root(), self.backup_path(path))
                 for d, _, files in os.walk(path):
-                    remote_dir_path = self.backup_path(path, suffix=f"/{d.replace(path, '').strip('/')}")
-                    if not self.is_dir(remote_dir_path):
-                        self.create(remote_dir_path)
+                    path_diff = d.replace(path, '')
+                    store_dir = self.join(backup_path, path_diff)
+                    if not self.is_dir(store_dir):
+                        self.create(store_dir)
                     for f in files:
-                        self.upload(os.path.join(d, f), f"{remote_dir_path}/{f}", True)
+                        self.upload(os.path.join(d, f), self.join(store_dir, f), True)
             elif os.path.isfile(path):
-                self.upload(path, self.backup_path(path))
+                self.upload(path, self.join(self.get_root(), self.backup_path(path)))
 
-    def clear_old(self, how_many_to_store, path=None, prefix=None):
-        if path is None or path == self.remote_dir:
+    def clear_old(self, how_many_to_store, path="", prefix=""):
+        if path or path == self.remote_dir:
             file_list = self.list(self.remote_dir, sort='modified')
         else:
             file_list = self.list(f"{self.remote_dir}/{path}", sort='modified')
@@ -123,10 +129,28 @@ class YaBackup(YaFile):
             if prefix:
                 file_list = list(filter(lambda x: x['name'].startswith(prefix), file_list))
         for file in file_list[how_many_to_store:]:
-            self.delete(self.remote_full_path(file['name'], subdir=path))
+            self.delete(self.join(self.get_root(), path, file['name']))
 
 
 if __name__ == '__main__':
-    yb = YaBackup(os.environ['TOKEN'], os.environ['REMOTE_DIR'])
-    yb.clear_old(2, prefix="tmp2-")
-    yb.backup("/home/pavel/tmp", False)
+    from dotenv import load_dotenv
+    from yaml import safe_load as load_yaml
+
+    load_dotenv()
+
+    yb = YaBackup(os.getenv('TOKEN'), os.getenv('REMOTE_DIR'))
+
+
+    def do_backup(path, store_days, do_archive):
+        yb.clear_old(
+            store_days,
+            prefix=path.rstrip('/').split('/')[-1] + "-"
+        )
+        yb.backup(path, do_archive)
+
+
+    with open('./backup_list.yml', 'r') as f:
+        config = load_yaml(f)
+
+    for i, items in config.items():
+        do_backup(i, items['days to store'], items['archive'])

@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 requests = "*"
 progress = "*"
+python-dotenv = "*"
+pyyaml = "*"
 
 [dev-packages]
 ipython = "*"
